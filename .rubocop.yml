@@ -1,0 +1,13 @@
+AllCops:
+  NewCops: enable
+  SuggestExtensions: false
+
+Metrics:
+  Enabled: false
+
+Style/Documentation:
+  Enabled: false
+
+# function plugin(掛名的 Hash 定義)命名比照 class(Gateway、EchoAgent)
+Naming/ConstantName:
+  Enabled: false
