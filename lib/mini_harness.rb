@@ -8,10 +8,12 @@ require 'falcon'
 require 'sinatra/base'
 require 'cordis'
 require 'securerandom'
+require 'cgi/escape'
 
 require_relative 'mini_harness/web_server'
 require_relative 'mini_harness/sessions'
 require_relative 'mini_harness/gateway'
+require_relative 'mini_harness/chat_ui'
 require_relative 'mini_harness/echo_agent'
 
 module MiniHarness
@@ -23,6 +25,7 @@ module MiniHarness
       ctx.plugin(WebServer, { url: url }),
       ctx.plugin(Sessions),
       ctx.plugin(Gateway),
+      ctx.plugin(ChatUI),
       ctx.plugin(EchoAgent)
     ]
   end

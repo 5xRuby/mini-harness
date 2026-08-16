@@ -40,6 +40,21 @@ Sync do
 
   expect(chat('hello'), { role: 'agent', text: 'echo: hello' }, 'echo agent replies')
 
+  # chat UI: page load, then uplink form POST + downlink turbo-stream websocket
+  internet = Async::HTTP::Internet.new
+  page = internet.get("#{URL}/", &:read)
+  expect(page.include?('turbo-stream-source'), true, 'chat page serves turbo-stream-source')
+  sid = page[/name="session" value="(\h+)"/, 1]
+  frames = []
+  Async::WebSocket::Client.connect(Async::HTTP::Endpoint.parse("#{URL}/stream?session=#{sid}")) do |connection|
+    internet.post("#{URL}/messages",
+                  [['content-type', 'application/x-www-form-urlencoded']],
+                  "session=#{sid}&text=hi-ui", &:read)
+    2.times { frames << connection.read.to_str }
+  end
+  expect(frames.join.scan('<turbo-stream ').size, 2, 'stream delivers two turbo-stream fragments')
+  expect(frames.join.include?('echo: hi-ui'), true, 'agent reply arrives as turbo-stream')
+
   # hot-swap the agent while the gateway keeps serving
   agent.dispose
   shout = ctx.plugin({ name: 'shout-agent', inject: [:sessions], apply: lambda { |c, _config|
@@ -48,7 +63,6 @@ Sync do
   shout.await
   expect(chat('hello'), { role: 'agent', text: 'HELLO' }, 'hot-swapped agent replies')
 
-  internet = Async::HTTP::Internet.new
   status = internet.get("#{URL}/nope", &:status)
   expect(status, 404, 'unregistered route 404s')
   internet.close
