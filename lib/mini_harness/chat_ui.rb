@@ -11,12 +11,33 @@ module MiniHarness
     name: 'chat-ui',
     inject: %i[web sessions],
     apply: lambda do |c, _config|
-      render = lambda do |entry|
-        <<~HTML
-          <turbo-stream action="append" target="messages"><template>
-            <div class="msg #{entry[:role]}"><span class="role">#{entry[:role]}</span>#{CGI.escapeHTML(entry[:text].to_s)}</div>
-          </template></turbo-stream>
-        HTML
+      # seen: per-connection set of stream ids whose message container exists.
+      # Streaming deltas append into the container; the final {text:} marker of
+      # a streamed message renders nothing (its content already streamed).
+      render = lambda do |entry, seen|
+        if entry[:delta]
+          fragments = +''
+          unless seen.include?(entry[:id])
+            seen << entry[:id]
+            fragments << <<~HTML
+              <turbo-stream action="append" target="messages"><template>
+                <div class="msg #{entry[:role]}"><span class="role">#{entry[:role]}</span><span id="msg-#{entry[:id]}"></span></div>
+              </template></turbo-stream>
+            HTML
+          end
+          fragments << <<~HTML
+            <turbo-stream action="append" target="msg-#{entry[:id]}"><template>#{CGI.escapeHTML(entry[:delta])}</template></turbo-stream>
+          HTML
+          fragments
+        elsif entry[:id] && seen.include?(entry[:id])
+          nil
+        else
+          <<~HTML
+            <turbo-stream action="append" target="messages"><template>
+              <div class="msg #{entry[:role]}"><span class="role">#{entry[:role]}</span>#{CGI.escapeHTML(entry[:text].to_s)}</div>
+            </template></turbo-stream>
+          HTML
+        end
       end
 
       connections = []
@@ -82,12 +103,20 @@ module MiniHarness
         session = c.sessions.open(request.params['session'])
         Async::WebSocket::Adapters::Rack.open(request.env) do |connection|
           connections << connection
+          seen = Set.new
           unsubscribe = c.sessions.subscribe(session) do |entry|
-            connection.write(Protocol::WebSocket::TextMessage.new(render.call(entry)))
-            connection.flush
+            fragment = render.call(entry, seen)
+            if fragment
+              connection.write(Protocol::WebSocket::TextMessage.new(fragment))
+              connection.flush
+            end
           end
           # read-only downlink: the client never sends; read just blocks until close
-          while connection.read; end
+          begin
+            while connection.read; end
+          rescue Protocol::WebSocket::ClosedError, IOError, Errno::ECONNRESET
+            nil # browser hangup, or our own close during shutdown — both normal
+          end
         ensure
           unsubscribe&.call
           connections.delete(connection)

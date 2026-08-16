@@ -30,10 +30,14 @@ module MiniHarness
             connection.write(Protocol::WebSocket::TextMessage.generate(entry))
             connection.flush
           end
-          while (message = connection.read)
-            payload = message.parse # JSON with symbolized keys
-            c.sessions.say(session, 'user', payload[:text].to_s)
-            c.emit('session/message', session, payload)
+          begin
+            while (message = connection.read)
+              payload = message.parse # JSON with symbolized keys
+              c.sessions.say(session, 'user', payload[:text].to_s)
+              c.emit('session/message', session, payload)
+            end
+          rescue Protocol::WebSocket::ClosedError, IOError, Errno::ECONNRESET
+            nil # client hangup, or our own close during shutdown — both normal
           end
         ensure
           unsubscribe&.call
