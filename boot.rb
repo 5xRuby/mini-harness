@@ -9,6 +9,7 @@
 #   curl localhost:9292/status
 
 Warning[:experimental] = false # silence Ruby 4's IO::Buffer notice from async's resolver
+$stdout.sync = true # logs flush immediately even when piped
 
 require_relative 'lib/mini_harness'
 

@@ -31,8 +31,12 @@ module MiniHarness
       ctx.plugin(Gateway),
       ctx.plugin(ChatUI)
     ]
-    if agent.nil? && ENV['DEEPSEEK_API_KEY']
-      fibers << ctx.plugin(Llm)
+    # LLM_PROVIDER / LLM_MODEL / LLM_API_KEY_ENV override the DeepSeek defaults
+    llm_config = { provider: ENV['LLM_PROVIDER']&.to_sym, model: ENV.fetch('LLM_MODEL', nil),
+                   api_key_env: ENV.fetch('LLM_API_KEY_ENV', nil) }.compact
+    key_env = llm_config[:api_key_env] || Llm::DEFAULTS[:api_key_env]
+    if agent.nil? && ENV[key_env]
+      fibers << ctx.plugin(Llm, llm_config)
       fibers << ctx.plugin(LlmAgent)
     else
       fibers << ctx.plugin(agent || EchoAgent)
