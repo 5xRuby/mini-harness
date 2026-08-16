@@ -34,6 +34,9 @@ cordis gem 的源頭是姊妹專案 `~/RubyPrjs/cordis-rb`(它自己的 agents.m
 - **`fiber.await` 對「依賴未滿足的 pending fiber」立即返回**(await 只等 in-flight transition)。組完樹要 `fibers.each(&:await)` 依依賴序等,才算 settle;只 await 最後一個會在依賴鏈載完前繼續跑,WS 測試就吊死在等永遠不會來的回覆。
 - client 提早斷線時 server 端 write 會 EPIPE(falcon 記 warning,無害);我方 sink 已 rescue。
 - Ruby 4 的 IO::Buffer experimental 警告來自 async 的 resolver:入口檔開頭 `Warning[:experimental] = false`。
+- **`Protocol::WebSocket::TextMessage.generate` 會 JSON 編碼**;推 raw 文字(如 turbo-stream HTML)要用 `TextMessage.new`。
+- **async 2.44 的 scheduler 在 run loop 層攔截 Interrupt**,`Sync do ... rescue Interrupt` 接不到;要 graceful shutdown 得自己 `Signal.trap(:INT)` + self-pipe 喚醒 main fiber(見 boot.rb)。
+- **沒 system prompt 的 LLM 會自稱 ChatGPT**——是幻覺不是接錯 provider;用 `RUBYLLM_DEBUG=1` 看實際請求驗證。
 
 ## 慣例
 
