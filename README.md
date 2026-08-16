@@ -1,26 +1,50 @@
 # mini-harness
 
-一個仿 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 形狀的迷你 agent harness,用來實戰 [cordis](https://rubygems.org/gems/cordis) gem:整個 app 就是一棵 cordis plugin tree,跑在單一 async reactor 上(Falcon + Sinatra + async-websocket)。
+English | [中文](README.zh.md)
 
-## 結構
+A miniature agent harness shaped after [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness), built as a proving ground for the [cordis](https://rubygems.org/gems/cordis) gem: the whole app is one cordis plugin tree running on a single async reactor (Falcon + Sinatra + async-websocket).
 
-| Plugin | 形狀 | 提供 |
+## Structure
+
+| Plugin | Shape | Provides |
 |---|---|---|
-| `WebServer` | `Cordis::Service` | `:web` — 內嵌 Falcon + Sinatra;route 註冊是掛在呼叫者 fiber 上的 revertible effect,plugin 卸載時 route 自動消失 |
-| `Sessions` | `Cordis::Service` | `:sessions` — in-memory 對話 store + 即時 fan-out |
-| `Gateway` | function plugin | `GET /ws` websocket 端點;收到的訊息轉成 `session/message` 事件 |
-| `EchoAgent` | function plugin | 監聽 `session/message` 回覆 — 真正 LLM agent 的佔位,可在伺服器不停機下熱換 |
+| `WebServer` | `Cordis::Service` | `:web` — embedded Falcon + Sinatra; route registration is a revertible effect on the caller's fiber, so routes vanish when their plugin is disposed |
+| `Sessions` | `Cordis::Service` | `:sessions` — in-memory conversation store with live fan-out, plus a streaming API for incremental agent replies |
+| `Llm` | `Cordis::Service` | `:llm` — thin wrapper over [ruby_llm](https://rubyllm.com); HTTP via async-http-faraday so calls cooperate with the reactor |
+| `Gateway` | function plugin | `GET /ws` websocket endpoint; inbound messages become `session/message` events |
+| `ChatUI` | function plugin | Browser frontend (Hotwire Turbo): uplink form POST `/messages`, read-only downlink websocket `/stream` pushing turbo-stream fragments |
+| `LlmAgent` / `EchoAgent` | function plugin | Listens for `session/message` and replies — hot-swappable while the server keeps serving |
 
-## 執行
+## Run
 
 ```
 bundle install
-bundle exec ruby boot.rb        # Ctrl-C 整棵樹 LIFO 收乾淨
-websocat ws://localhost:9292/ws # 輸入 {"text":"hello"}
-curl localhost:9292/status
+bundle exec ruby boot.rb        # Ctrl-C unwinds the whole tree LIFO
+open http://localhost:9292      # chat in the browser
+websocat ws://localhost:9292/ws # or over raw websocket: {"text":"hello"}
 ```
 
-自我檢查(啟動 → WS 對話 → 熱換 agent → 收樹):
+## Enabling the real LLM agent
+
+Without configuration the tree mounts the placeholder `EchoAgent`. Set a DeepSeek API key and the tree mounts `Llm` + `LlmAgent` instead, streaming replies chunk by chunk into the browser:
+
+```
+export DEEPSEEK_API_KEY=sk-...
+bundle exec ruby boot.rb
+```
+
+To use another provider/model, pass config when assembling the tree — any provider ruby_llm supports works:
+
+```ruby
+ctx.plugin(MiniHarness::Llm, { provider: :openai, model: 'gpt-4o', api_key_env: 'OPENAI_API_KEY' })
+ctx.plugin(MiniHarness::LlmAgent)
+```
+
+Only the env var *name* lives in config; the key itself is read from the environment at load time.
+
+## Self-check
+
+Boots the tree, talks to it over HTTP and websocket, hot-swaps the agent, exercises streaming, then unwinds:
 
 ```
 bundle exec ruby smoke.rb

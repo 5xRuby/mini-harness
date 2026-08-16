@@ -32,7 +32,7 @@ end
 ctx = Cordis::Context.new
 
 Sync do
-  fibers = MiniHarness.plug(ctx, url: URL)
+  fibers = MiniHarness.plug(ctx, url: URL, agent: MiniHarness::EchoAgent)
   agent = fibers.last
   # awaiting in dependency order: by the time a provider is active, its
   # dependents' load transitions are already scheduled
@@ -62,6 +62,29 @@ Sync do
   } })
   shout.await
   expect(chat('hello'), { role: 'agent', text: 'HELLO' }, 'hot-swapped agent replies')
+
+  # streaming agent: deltas render incrementally, the final marker adds nothing
+  shout.dispose
+  stream_agent = ctx.plugin({ name: 'stream-agent', inject: [:sessions], apply: lambda { |c, _config|
+    c.on('session/message') do |session, _payload|
+      streamer = c.sessions.stream(session, 'agent')
+      streamer.push('Hel')
+      streamer.push('lo')
+      streamer.finish
+    end
+  } })
+  stream_agent.await
+  page = internet.get("#{URL}/", &:read)
+  sid = page[/name="session" value="(\h+)"/, 1]
+  frames = []
+  Async::WebSocket::Client.connect(Async::HTTP::Endpoint.parse("#{URL}/stream?session=#{sid}")) do |connection|
+    internet.post("#{URL}/messages",
+                  [['content-type', 'application/x-www-form-urlencoded']],
+                  "session=#{sid}&text=stream-me", &:read)
+    3.times { frames << connection.read.to_str }
+  end
+  expect(frames.join.scan('<turbo-stream ').size, 4, 'streamed reply renders container + two deltas')
+  expect(frames.join.include?('Hel') && frames.join.include?('lo'), true, 'delta text arrives incrementally')
 
   status = internet.get("#{URL}/nope", &:status)
   expect(status, 404, 'unregistered route 404s')
