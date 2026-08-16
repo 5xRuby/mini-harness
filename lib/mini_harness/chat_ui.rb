@@ -114,8 +114,8 @@ module MiniHarness
           # read-only downlink: the client never sends; read just blocks until close
           begin
             while connection.read; end
-          rescue Protocol::WebSocket::ClosedError
-            nil # browser navigated away / refreshed — a normal way to hang up
+          rescue Protocol::WebSocket::ClosedError, IOError, Errno::ECONNRESET
+            nil # browser hangup, or our own close during shutdown — both normal
           end
         ensure
           unsubscribe&.call

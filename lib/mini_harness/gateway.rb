@@ -36,8 +36,8 @@ module MiniHarness
               c.sessions.say(session, 'user', payload[:text].to_s)
               c.emit('session/message', session, payload)
             end
-          rescue Protocol::WebSocket::ClosedError
-            nil # client hung up without a close frame — normal
+          rescue Protocol::WebSocket::ClosedError, IOError, Errno::ECONNRESET
+            nil # client hangup, or our own close during shutdown — both normal
           end
         ensure
           unsubscribe&.call
