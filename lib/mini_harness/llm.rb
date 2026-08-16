@@ -10,6 +10,16 @@ module MiniHarness
 
     DEFAULTS = { provider: :deepseek, model: 'deepseek-chat', api_key_env: 'DEEPSEEK_API_KEY' }.freeze
 
+    # Persona borrowed from the original harness's standard preset (MIT);
+    # {{model}} is interpolated at load. Override with config[:system].
+    DEFAULT_SYSTEM = <<~PROMPT
+      You are an AI agent powered by mini-harness.
+
+      You are a chat assistant powered by the {{model}} model.
+
+      Keep answers brief and factual.
+    PROMPT
+
     def init
       @opts = DEFAULTS.merge(config || {})
       key = ENV.fetch(@opts[:api_key_env])
@@ -25,6 +35,8 @@ module MiniHarness
     # pending user message. Streams deltas to the block, returns the full reply.
     def ask(history, &on_delta)
       chat = RubyLLM.chat(model: @opts[:model], provider: @opts[:provider], assume_model_exists: true)
+      system = (@opts[:system] || DEFAULT_SYSTEM).gsub('{{model}}', @opts[:model])
+      chat.with_instructions(system)
       history[0...-1].each do |entry|
         chat.add_message(role: entry[:role] == 'agent' ? :assistant : :user, content: entry[:text])
       end
