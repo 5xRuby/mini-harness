@@ -15,6 +15,16 @@ require_relative 'lib/mini_harness'
 
 ctx = Cordis::Context.new
 
+# async's scheduler intercepts Interrupt at the run loop, so a rescue inside
+# the Sync block never sees it. Trap SIGINT ourselves and wake the main fiber
+# through a self-pipe — the tree then unwinds while the reactor is still alive.
+stop_reader, stop_writer = IO.pipe
+Signal.trap(:INT) do
+  stop_writer.write_nonblock('x')
+rescue IO::WaitWritable, IOError
+  nil
+end
+
 Sync do
   MiniHarness.plug(ctx).each(&:await)
 
@@ -23,8 +33,7 @@ Sync do
     c.web.route(c, 'GET', '/status') { "ok\n" }
   } })
 
-  Async::Queue.new.dequeue # park forever
-rescue Interrupt
+  stop_reader.wait_readable # park until Ctrl-C
   puts "\nshutting down"
   ctx.fiber.dispose
 end
